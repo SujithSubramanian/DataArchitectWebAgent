@@ -1,0 +1,35 @@
+# Data Architect Agent - Windows Version
+# Python 3.9+ required (compatible with Python 3.13)
+
+# Core Dependencies
+flask==3.0.0
+flask-cors==4.0.0
+werkzeug==3.0.1
+
+# HTTP Client - CRITICAL: Must be compatible with OpenAI SDK
+# The proxies error is caused by httpx version incompatibility
+httpx==0.24.1
+httpcore==0.17.3
+
+# OpenAI SDK - Works with both Azure and standard OpenAI
+openai==1.12.0
+
+# LangChain core (for standard OpenAI fallback only)
+langchain-openai==0.1.0
+
+# Data Processing - Updated for Python 3.13 compatibility
+pandas>=2.2.0
+numpy>=1.26.0
+faker>=22.0.0
+
+# Visualization
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# Database
+mysql-connector-python>=8.3.0
+sqlalchemy>=2.0.25
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0

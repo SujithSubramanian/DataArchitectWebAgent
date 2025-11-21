@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Architect Agent v16</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🗂️ Data Architect Agent</h1>
+            <p class="subtitle">AI-Powered Data Architecture Design & Implementation</p>
+            <p class="version">v16 - Bug Fix: Upload Controls Now Working! 🔧</p>
+            <div class="status" id="status">
+                <span class="status-indicator" id="statusIndicator">●</span>
+                <span id="statusText">Initializing...</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Conversation Area -->
+            <div class="conversation-panel">
+                <div class="conversation-header">
+                    <h2>Conversation</h2>
+                    <button class="btn btn-secondary btn-small" id="resetBtn">Reset</button>
+                </div>
+                <div class="conversation-area" id="conversationArea">
+                    <div class="message assistant-message">
+                        <div class="message-icon">🤖</div>
+                        <div class="message-content">
+                            <strong>Assistant:</strong> Welcome! I'm your Data Architecture Assistant.<br><br>
+                            I can help you with:<br>
+                            • Forward Engineering: Requirements → Models<br>
+                            • Reverse Engineering: DDL/CSV → Models<br>
+                            • Natural Language Queries: Ask questions about your data! 🆕<br><br>
+                            Let's start by telling me your domain...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-panel">
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="userInput" 
+                        class="input-box" 
+                        placeholder="Enter your domain (e.g., 'E-commerce', 'Healthcare', 'Finance')"
+                        autocomplete="off"
+                    >
+                    <button class="btn btn-primary" id="sendBtn">Send</button>
+                </div>
+                
+                <!-- File Upload Area (hidden by default) -->
+                <div class="upload-area" id="uploadArea" style="display: none;">
+                    <div class="upload-group">
+                        <label for="fileInput" class="file-label">
+                            <span class="file-icon">📁</span>
+                            <span id="fileLabel">Choose File</span>
+                        </label>
+                        <input type="file" id="fileInput" class="file-input" accept=".sql,.ddl,.txt,.csv">
+                        <button class="btn btn-success btn-small" id="uploadBtn" disabled>Upload</button>
+                    </div>
+                    <div class="file-info" id="fileInfo"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Panel -->
+        <div class="results-panel" id="resultsPanel" style="display: none;">
+            <h2>Results</h2>
+            <div id="resultsContent"></div>
+            
+            <!-- NEW: Ask Questions Button (appears after reverse engineering) -->
+            <button id="askQuestionsBtn" class="btn btn-query" style="display: none;">
+                ❓ Ask Questions About Your Data
+            </button>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Data Architect Agent v16 - Powered by Azure OpenAI GPT-4</p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <p>Processing...</p>
+    </div>
+
+    <!-- NEW: Query Modal -->
+    <div id="queryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Query Your Data</h2>
+                <span class="close">&times;</span>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Query Input Section -->
+                <div class="query-input-section">
+                    <label for="nlQuery">Ask a question in plain English:</label>
+                    <div class="query-input-container">
+                        <input type="text" id="nlQuery" placeholder="e.g., How many tables are in the database?" />
+                        <button id="askQuestionBtn" class="btn btn-success">Ask Question</button>
+                    </div>
+                </div>
+                
+                <!-- Loading Indicator -->
+                <div id="queryLoading" class="query-loading" style="display: none;">
+                    <div class="spinner-small"></div>
+                    <p>Processing your question...</p>
+                </div>
+                
+                <!-- Generated SQL Section -->
+                <div id="sqlSection" class="result-section" style="display: none;">
+                    <h3>Generated SQL:</h3>
+                    <pre id="generatedSQL" class="sql-display"></pre>
+                </div>
+                
+                <!-- Results Section -->
+                <div id="resultsSection" class="result-section" style="display: none;">
+                    <h3>Results:</h3>
+                    <div id="queryResults" class="results-display"></div>
+                </div>
+                
+                <!-- Error Section -->
+                <div id="errorSection" class="error-section" style="display: none;">
+                    <h3>⚠️ Error:</h3>
+                    <p id="errorMessage"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

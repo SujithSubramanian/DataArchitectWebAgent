@@ -1,0 +1,594 @@
+// Data Architect Agent - Frontend JavaScript v1.10
+// Now with Natural Language Query capability!
+
+class DataArchitectApp {
+    constructor() {
+        this.apiUrl = 'http://localhost:5000/api';
+        this.sessionId = null;
+        this.currentStage = 0;
+        this.context = {};
+        this.queryEnabled = false;  // NEW: Track if querying is enabled
+        
+        this.initializeElements();
+        this.attachEventListeners();
+        this.checkHealth();
+        this.startSession();
+    }
+    
+    initializeElements() {
+        // Status elements
+        this.statusIndicator = document.getElementById('statusIndicator');
+        this.statusText = document.getElementById('statusText');
+        
+        // Conversation elements
+        this.conversationArea = document.getElementById('conversationArea');
+        this.userInput = document.getElementById('userInput');
+        this.sendBtn = document.getElementById('sendBtn');
+        this.resetBtn = document.getElementById('resetBtn');
+        
+        // Upload elements
+        this.uploadArea = document.getElementById('uploadArea');
+        this.fileInput = document.getElementById('fileInput');
+        this.fileLabel = document.getElementById('fileLabel');
+        this.fileInfo = document.getElementById('fileInfo');
+        this.uploadBtn = document.getElementById('uploadBtn');
+        
+        // Results elements
+        this.resultsPanel = document.getElementById('resultsPanel');
+        this.resultsContent = document.getElementById('resultsContent');
+        
+        // Loading overlay
+        this.loadingOverlay = document.getElementById('loadingOverlay');
+        
+        // NEW: Query Modal elements
+        this.queryModal = document.getElementById('queryModal');
+        this.askQuestionsBtn = document.getElementById('askQuestionsBtn');
+        this.closeModal = document.querySelector('.close');
+        this.nlQueryInput = document.getElementById('nlQuery');
+        this.askQuestionBtn = document.getElementById('askQuestionBtn');
+        this.queryLoading = document.getElementById('queryLoading');
+        this.sqlSection = document.getElementById('sqlSection');
+        this.generatedSQL = document.getElementById('generatedSQL');
+        this.resultsSection = document.getElementById('resultsSection');
+        this.queryResults = document.getElementById('queryResults');
+        this.errorSection = document.getElementById('errorSection');
+        this.errorMessage = document.getElementById('errorMessage');
+    }
+    
+    attachEventListeners() {
+        // Send message on button click
+        this.sendBtn.addEventListener('click', () => this.sendMessage());
+        
+        // Send message on Enter key
+        this.userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.sendMessage();
+            }
+        });
+        
+        // Reset conversation
+        this.resetBtn.addEventListener('click', () => this.resetConversation());
+        
+        // File upload
+        this.fileInput.addEventListener('change', (e) => this.handleFileSelection(e));
+        this.uploadBtn.addEventListener('click', () => this.uploadFile());
+        
+        // NEW: Query Modal handlers
+        this.askQuestionsBtn.addEventListener('click', () => this.openQueryModal());
+        this.closeModal.addEventListener('click', () => this.closeQueryModal());
+        
+        // Close modal when clicking outside
+        window.addEventListener('click', (e) => {
+            if (e.target === this.queryModal) {
+                this.closeQueryModal();
+            }
+        });
+        
+        // Handle Enter key in query input
+        this.nlQueryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.askQuestionBtn.click();
+            }
+        });
+        
+        // Handle query submission
+        this.askQuestionBtn.addEventListener('click', () => this.submitQuery());
+    }
+    
+    async checkHealth() {
+        try {
+            const response = await fetch(`${this.apiUrl}/health`);
+            const data = await response.json();
+            
+            if (data.status === 'ok' && data.api_ready) {
+                this.updateStatus('online', 'Connected');
+            } else {
+                this.updateStatus('offline', 'API Not Configured');
+                this.addMessage('system', 'Please configure your OpenAI API key in the .env file');
+            }
+        } catch (error) {
+            this.updateStatus('offline', 'Server Offline');
+            this.addMessage('system', 'Cannot connect to server. Please start the backend server.');
+        }
+    }
+    
+    async startSession() {
+        try {
+            const response = await fetch(`${this.apiUrl}/start_session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.sessionId = data.session_id;
+                console.log('Session started:', this.sessionId);
+            } else {
+                throw new Error(data.error || 'Failed to start session');
+            }
+        } catch (error) {
+            console.error('Error starting session:', error);
+            this.addMessage('system', 'Error starting session: ' + error.message);
+        }
+    }
+    
+    async sendMessage() {
+        const message = this.userInput.value.trim();
+        
+        if (!message) return;
+        
+        if (!this.sessionId) {
+            this.addMessage('system', 'No active session. Please refresh the page.');
+            return;
+        }
+        
+        // Clear input
+        this.userInput.value = '';
+        
+        // Add user message to UI
+        this.addMessage('user', message);
+        
+        // Show loading
+        this.showLoading(true);
+        
+        try {
+            const response = await fetch(`${this.apiUrl}/process_message`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: this.sessionId,
+                    message: message
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Add assistant response
+                this.addMessage('assistant', data.message);
+                
+                // Update context and stage
+                this.currentStage = data.stage;
+                this.context = data.context;
+                
+                // Update placeholder based on stage
+                this.updatePlaceholder();
+                
+                // Show upload area if needed
+                if (this.currentStage === 5) {
+                    this.showUploadArea();
+                } else {
+                    this.hideUploadArea();
+                }
+                
+                // Show results if stage complete
+                if (data.stage_complete && data.result) {
+                    this.showResults(data.result);
+                }
+            } else {
+                this.addMessage('system', 'Error: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
+            this.addMessage('system', 'Error: ' + error.message);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+    
+    handleFileSelection(event) {
+        const file = event.target.files[0];
+        
+        if (file) {
+            this.fileLabel.textContent = file.name;
+            this.fileInfo.textContent = `Selected: ${file.name} (${this.formatFileSize(file.size)})`;
+            this.uploadBtn.disabled = false;
+        } else {
+            this.fileLabel.textContent = 'Choose File';
+            this.fileInfo.textContent = '';
+            this.uploadBtn.disabled = true;
+        }
+    }
+    
+    async uploadFile() {
+        const file = this.fileInput.files[0];
+        
+        if (!file) {
+            this.addMessage('system', 'Please select a file first');
+            return;
+        }
+        
+        this.showLoading(true);
+        
+        try {
+            // Determine upload type based on context
+            const inputType = (this.context.input_type || 'ddl').toLowerCase();
+            
+            let endpoint, response;
+            
+            if (inputType === 'ddl') {
+                // DDL: Read file content as text, send as JSON
+                const content = await this.readFileContent(file);
+                
+                endpoint = `${this.apiUrl}/upload_ddl`;
+                const payload = {
+                    session_id: this.sessionId,
+                    ddl_content: content
+                };
+                
+                response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+            } else if (inputType === 'csv') {
+                // CSV: Send actual file as FormData (no need to read content)
+                endpoint = `${this.apiUrl}/upload_csv`;
+                
+                console.log('🔍 CSV Upload Debug:');
+                console.log('   Session ID:', this.sessionId);
+                console.log('   File:', file.name);
+                console.log('   Endpoint:', endpoint);
+                
+                const formData = new FormData();
+                formData.append('session_id', this.sessionId);
+                formData.append('files', file);  // Append actual file object
+                
+                console.log('   FormData contents:');
+                for (let pair of formData.entries()) {
+                    console.log('   -', pair[0], ':', pair[1]);
+                }
+                
+                response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData  // No Content-Type header - browser sets it automatically
+                });
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.addMessage('assistant', data.message);
+                
+                if (data.result) {
+                    this.showResults(data.result);
+                }
+                
+                // NEW: Enable query button if database is available
+                if (data.enable_query) {
+                    this.queryEnabled = true;
+                    this.askQuestionsBtn.style.display = 'block';
+                    console.log('✅ Query feature enabled!');
+                    console.log('   Button display:', this.askQuestionsBtn.style.display);
+                    console.log('   Button element:', this.askQuestionsBtn);
+                    
+                    // Scroll to make sure button is visible
+                    setTimeout(() => {
+                        this.askQuestionsBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 500);
+                } else {
+                    console.log('⚠️  Query not enabled - enable_query is false');
+                }
+                
+                // Reset upload UI
+                this.hideUploadArea();
+                this.fileInput.value = '';
+                this.fileLabel.textContent = 'Choose File';
+                this.fileInfo.textContent = '';
+                this.uploadBtn.disabled = true;
+            } else {
+                this.addMessage('system', 'Upload error: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Error uploading file:', error);
+            this.addMessage('system', 'Error: ' + error.message);
+        } finally {
+            this.showLoading(false);
+        }
+    }
+    
+    readFileContent(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(new Error('Failed to read file'));
+            reader.readAsText(file);
+        });
+    }
+    
+    // NEW: Query Modal functions
+    openQueryModal() {
+        this.queryModal.style.display = 'block';
+        this.nlQueryInput.focus();
+        // Reset modal state
+        this.queryLoading.style.display = 'none';
+        this.sqlSection.style.display = 'none';
+        this.resultsSection.style.display = 'none';
+        this.errorSection.style.display = 'none';
+    }
+    
+    closeQueryModal() {
+        this.queryModal.style.display = 'none';
+    }
+    
+    async submitQuery() {
+        const query = this.nlQueryInput.value.trim();
+        
+        if (!query) {
+            alert('Please enter a question');
+            return;
+        }
+        
+        // Show loading, hide results
+        this.queryLoading.style.display = 'block';
+        this.sqlSection.style.display = 'none';
+        this.resultsSection.style.display = 'none';
+        this.errorSection.style.display = 'none';
+        this.askQuestionBtn.disabled = true;
+        
+        try {
+            const response = await fetch(`${this.apiUrl}/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: query,
+                    session_id: this.sessionId
+                })
+            });
+            
+            const data = await response.json();
+            
+            // Hide loading
+            this.queryLoading.style.display = 'none';
+            this.askQuestionBtn.disabled = false;
+            
+            if (data.error) {
+                // Show error
+                this.errorSection.style.display = 'block';
+                this.errorMessage.textContent = data.error;
+                // Still show SQL if available
+                if (data.sql) {
+                    this.sqlSection.style.display = 'block';
+                    this.generatedSQL.textContent = data.sql;
+                }
+            } else {
+                // Show SQL
+                this.sqlSection.style.display = 'block';
+                this.generatedSQL.textContent = data.sql || 'N/A';
+                
+                // Show results
+                this.resultsSection.style.display = 'block';
+                
+                if (data.results && data.results.length > 0) {
+                    // Create table
+                    let tableHTML = '<table><thead><tr>';
+                    const columns = Object.keys(data.results[0]);
+                    columns.forEach(col => {
+                        tableHTML += `<th>${col}</th>`;
+                    });
+                    tableHTML += '</tr></thead><tbody>';
+                    
+                    data.results.forEach(row => {
+                        tableHTML += '<tr>';
+                        columns.forEach(col => {
+                            const value = row[col];
+                            tableHTML += `<td>${value !== null && value !== undefined ? value : 'NULL'}</td>`;
+                        });
+                        tableHTML += '</tr>';
+                    });
+                    tableHTML += '</tbody></table>';
+                    
+                    this.queryResults.innerHTML = tableHTML;
+                } else {
+                    this.queryResults.innerHTML = '<p>Query executed successfully. No results returned.</p>';
+                }
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            this.queryLoading.style.display = 'none';
+            this.errorSection.style.display = 'block';
+            this.errorMessage.textContent = 'Failed to execute query: ' + error.message;
+            this.askQuestionBtn.disabled = false;
+        }
+    }
+    
+    async resetConversation() {
+        if (!confirm('Are you sure you want to reset the conversation?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${this.apiUrl}/reset_session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: this.sessionId })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Clear conversation area
+                this.conversationArea.innerHTML = '';
+                
+                // Reset state
+                this.currentStage = 0;
+                this.context = {};
+                this.queryEnabled = false;
+                
+                // Hide upload area
+                this.hideUploadArea();
+                
+                // Hide results and query button
+                this.resultsPanel.style.display = 'none';
+                this.askQuestionsBtn.style.display = 'none';
+                
+                // Reset input
+                this.userInput.value = '';
+                this.userInput.placeholder = "Enter your domain (e.g., 'E-commerce', 'Healthcare', 'Finance')";
+                
+                // Add welcome message
+                this.addMessage('assistant', 
+                    "Welcome! I'm your Data Architecture Assistant.<br><br>" +
+                    "I can help you with:<br>" +
+                    "• Forward Engineering: Requirements → Models<br>" +
+                    "• Reverse Engineering: DDL/CSV → Models<br>" +
+                    "• Natural Language Queries: Ask questions about your data! 🆕<br><br>" +
+                    "Let's start by telling me your domain..."
+                );
+            }
+        } catch (error) {
+            console.error('Error resetting session:', error);
+            this.addMessage('system', 'Error resetting session: ' + error.message);
+        }
+    }
+    
+    addMessage(type, content) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}-message`;
+        
+        let icon = '🤖';
+        let label = 'Assistant';
+        
+        if (type === 'user') {
+            icon = '👤';
+            label = 'You';
+        } else if (type === 'system') {
+            icon = '⚠️';
+            label = 'System';
+        }
+        
+        // Convert markdown-style links [text](url) to HTML
+        let processedContent = content.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+            // Check if it's a visualization HTML file (for viewing in new tab)
+            if (url.includes('.html')) {
+                return `<a href="/api/view/${url}" target="_blank" class="view-link">${text}</a>`;
+            }
+            // Check if it's a download link
+            else if (url.endsWith('.zip')) {
+                return `<a href="/api/download/${url}" download class="download-link">${text}</a>`;
+            }
+            return `<a href="${url}" target="_blank">${text}</a>`;
+        });
+        
+        // Convert **bold** to <strong>
+        processedContent = processedContent.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        
+        // Convert newlines to <br>
+        processedContent = processedContent.replace(/\n/g, '<br>');
+        
+        messageDiv.innerHTML = `
+            <div class="message-icon">${icon}</div>
+            <div class="message-content">
+                ${type !== 'user' ? `<strong>${label}:</strong> ` : ''}
+                ${processedContent}
+            </div>
+        `;
+        
+        this.conversationArea.appendChild(messageDiv);
+        this.conversationArea.scrollTop = this.conversationArea.scrollHeight;
+    }
+    
+    showUploadArea() {
+        this.uploadArea.style.display = 'block';
+        
+        // Update file input accept attribute based on input type
+        const inputType = this.context.input_type || 'ddl';
+        if (inputType === 'ddl') {
+            this.fileInput.accept = '.sql,.ddl,.txt';
+        } else if (inputType === 'csv') {
+            this.fileInput.accept = '.csv';
+        }
+    }
+    
+    hideUploadArea() {
+        this.uploadArea.style.display = 'none';
+    }
+    
+    showResults(result) {
+        this.resultsPanel.style.display = 'block';
+        
+        let html = '<h3>✅ Project Created Successfully!</h3>';
+        
+        if (result.project_id) {
+            html += `<p><strong>Project ID:</strong> ${result.project_id}</p>`;
+        }
+        
+        if (result.artifacts) {
+            html += `<p><strong>Artifacts:</strong> ${Object.keys(result.artifacts).length} files created</p>`;
+            html += '<ul>';
+            for (const [key, path] of Object.entries(result.artifacts)) {
+                html += `<li>${key}: ${path}</li>`;
+            }
+            html += '</ul>';
+        }
+        
+        if (result.zip_file) {
+            html += `<p><strong>Download:</strong> <a href="/api/download/${result.zip_file}" download>📦 ${result.zip_file}</a></p>`;
+        }
+        
+        this.resultsContent.innerHTML = html;
+        
+        // Scroll to results
+        this.resultsPanel.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    updateStatus(status, text) {
+        this.statusIndicator.className = `status-indicator ${status}`;
+        this.statusText.textContent = text;
+    }
+    
+    updatePlaceholder() {
+        // Update placeholder text based on current stage
+        const placeholders = {
+            0: "Enter your domain (e.g., 'E-commerce', 'Healthcare', 'Finance')",
+            1: "Type 'forward' or 'reverse'",
+            2: "Type 'DDL' or 'CSV'",
+            3: "Describe your system requirements...",
+            4: "List your entities (e.g., Customer, Product, Order)",
+            5: "Use upload button below"
+        };
+        
+        this.userInput.placeholder = placeholders[this.currentStage] || "Type your message...";
+    }
+    
+    showLoading(show) {
+        if (show) {
+            this.loadingOverlay.classList.add('active');
+        } else {
+            this.loadingOverlay.classList.remove('active');
+        }
+    }
+    
+    formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+}
+
+// Initialize app when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    window.app = new DataArchitectApp();
+});
